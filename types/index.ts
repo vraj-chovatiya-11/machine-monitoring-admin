@@ -13,6 +13,7 @@ export interface Machine {
   status: 'online' | 'offline' | 'maintenance'
   lastSeen?: string
   ipAddress?: string
+  fac_machine_number?: number
 }
 
 export interface LogFilter {
@@ -22,4 +23,13 @@ export interface LogFilter {
   endDate?: string
   search?: string
 }
+
+// Export machine monitoring types
+export type {
+  MonitorLog,
+  MachineLogData,
+  MachineLiveData,
+  WebSocketMessage,
+  ConnectionStatus,
+} from './machineMonitor'
 

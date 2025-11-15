@@ -9,15 +9,43 @@ import MachineCards from './MachineCards'
 import MachineList from './MachineList'
 import LogViewer from './LogViewer'
 import LogFilters from './LogFilters'
+import MachineLiveMonitor from './MachineLiveMonitor'
+import { useCurrentUser } from '@/hooks/useCurrentUser'
 import type { LogFilter } from '@/types'
 
 export default function Dashboard() {
   const [selectedMachineId, setSelectedMachineId] = useState<string | undefined>()
   const [filters, setFilters] = useState<LogFilter>({})
-  const [activeView, setActiveView] = useState<'Cards' | 'Lists' | 'Custom' | 'Summary' | 'Dashboard'>('Cards')
+  const [activeView, setActiveView] = useState<'Cards' | 'Lists' | 'Custom' | 'Summary' | 'Dashboard'>('Dashboard')
+  const { userId, loading: userLoading } = useCurrentUser()
 
   const renderContent = () => {
     switch (activeView) {
+      case 'Dashboard':
+        // Show live machine monitoring dashboard
+        if (userLoading) {
+          return (
+            <div className="p-6">
+              <div className="flex items-center justify-center h-64">
+                <div className="text-gray-500">Loading user profile...</div>
+              </div>
+            </div>
+          )
+        }
+        if (!userId) {
+          return (
+            <div className="p-6">
+              <div className="flex items-center justify-center h-64">
+                <div className="text-red-500">Unable to load user profile. Please log in.</div>
+              </div>
+            </div>
+          )
+        }
+        return (
+          <div className="p-6">
+            <MachineLiveMonitor userId={userId} />
+          </div>
+        )
       case 'Cards':
         return <MachineCards />
       case 'Lists':

@@ -31,7 +31,10 @@ export default function LogViewer({ machineId, filters }: LogViewerProps) {
     }
   }
 
-  if (loading && logs.length === 0) {
+  // Ensure logs is always an array
+  const safeLogs = Array.isArray(logs) ? logs : []
+
+  if (loading && safeLogs.length === 0) {
     return (
       <div className="h-full flex items-center justify-center">
         <div className="text-gray-500">Loading logs...</div>
@@ -49,11 +52,11 @@ export default function LogViewer({ machineId, filters }: LogViewerProps) {
 
   return (
     <div className="h-full overflow-y-auto bg-white p-4 font-mono text-sm">
-      {logs.length === 0 ? (
+      {safeLogs.length === 0 ? (
         <div className="text-center text-gray-500 mt-8">No logs found</div>
       ) : (
         <div className="space-y-1">
-          {logs.map((log) => (
+          {safeLogs.map((log) => (
             <div
               key={log.id}
               className={cn(
