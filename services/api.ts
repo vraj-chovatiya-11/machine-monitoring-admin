@@ -302,6 +302,45 @@ export const machineService = {
     })
     return response.data.data || { day: 0, night: 0, total: 0 }
   },
+
+  /**
+   * Get stop times for machines
+   * Returns stop times grouped by shift (day/night) for today
+   * Backend returns: { success: true, data: { [machineNumber]: { day: number, night: number, total: number } }, meta: {} }
+   * Note: Times are in seconds
+   */
+  async getFactoryMachinesStopTimes(factoryId: number): Promise<Record<number, { day: number; night: number; total: number }>> {
+    const response = await apiClient.get<{
+      success: boolean
+      data: Record<number, { day: number; night: number; total: number }>
+      meta?: any
+    }>('/machine/stop-times/factory', {
+      params: {
+        factory_id: factoryId,
+      },
+    })
+    return response.data.data || {}
+  },
+
+  /**
+   * Get stop times for a specific machine
+   * Returns stop times for today grouped by shift
+   * Backend returns: { success: true, data: { day: number, night: number, total: number }, meta: {} }
+   * Note: Times are in seconds
+   */
+  async getMachineStopTimes(factoryId: number, machineNumber: number): Promise<{ day: number; night: number; total: number }> {
+    const response = await apiClient.get<{
+      success: boolean
+      data: { day: number; night: number; total: number }
+      meta?: any
+    }>('/machine/stop-times/machine', {
+      params: {
+        factory_id: factoryId,
+        machine_number: machineNumber,
+      },
+    })
+    return response.data.data || { day: 0, night: 0, total: 0 }
+  },
 }
 
 export default apiClient

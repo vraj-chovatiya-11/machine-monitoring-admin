@@ -5,17 +5,24 @@ import { useCurrentUser } from '@/hooks/useCurrentUser'
 import { useMachineMonitor } from '@/hooks/useMachineMonitor'
 import { useMachines } from '@/hooks/useMachines'
 import { useMachineStopCounts } from '@/hooks/useMachineStopCounts'
+import { useMachineStopTimes } from '@/hooks/useMachineStopTimes'
 import { machineService, default as apiClient } from '@/services/api'
 import { formatDistanceToNow } from 'date-fns'
 import type { MachineLiveData, MonitorLog } from '@/types/machineMonitor'
 import type { Machine } from '@/types'
+import MachineDetailModal from './MachineDetailModal'
 
 /**
- * Format time duration in MM:SS format
+ * Format time duration in HH:MM:SS format (or MM:SS if less than an hour)
  */
 function formatDuration(seconds: number): string {
-  const mins = Math.floor(seconds / 60)
+  const hours = Math.floor(seconds / 3600)
+  const mins = Math.floor((seconds % 3600) / 60)
   const secs = Math.floor(seconds % 60)
+
+  if (hours > 0) {
+    return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+  }
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
 }
 
@@ -29,14 +36,18 @@ function calculatePercentage(stitches: number): number {
 }
 
 /**
- * Machine Card Component
+ * Machine Card Component - Simplified to show only essential info
  */
 function MachineCard({
   machine,
   stopCounts,
+  stopTimes,
+  onClick,
 }: {
   machine: MachineLiveData
   stopCounts?: { day: number; night: number; total: number }
+  stopTimes?: { day: number; night: number; total: number }
+  onClick: () => void
 }) {
   const [currentTime, setCurrentTime] = useState(new Date())
   const isRunning = machine.machineStatus === 1
@@ -54,16 +65,18 @@ function MachineCard({
   const elapsedSeconds = Math.max(0, Math.floor((currentTime.getTime() - machine.lastUpdated.getTime()) / 1000))
   const elapsedTime = formatDuration(elapsedSeconds)
 
-  const dayStops = stopCounts?.day || 0
-  const nightStops = stopCounts?.night || 0
   const totalStops = stopCounts?.total || 0
+  const totalStopTime = stopTimes?.total || 0
 
   return (
-    <div className="bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md transition-shadow overflow-hidden">
+    <div
+      onClick={onClick}
+      className="bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-lg transition-all cursor-pointer overflow-hidden"
+    >
       {/* Header */}
       <div
         className={`px-4 py-3 flex items-center justify-between ${
-          isRunning ? 'bg-green-500' : 'bg-gray-400'
+          isRunning ? 'bg-green-500' : 'bg-red-500'
         }`}
       >
         <div className="flex items-center gap-2">
@@ -87,7 +100,7 @@ function MachineCard({
         </span>
       </div>
 
-      {/* Content */}
+      {/* Content - Only Essential Info */}
       <div className="p-4 space-y-3">
         {/* Stitches */}
         <div className="flex items-center justify-between">
@@ -108,7 +121,7 @@ function MachineCard({
         {/* Percentage */}
         <div className="space-y-1">
           <div className="flex items-center justify-between">
-            <span className="text-sm text-gray-600">Percentage</span>
+            <span className="text-sm text-gray-600">Efficiency</span>
             <span className="text-sm font-semibold text-gray-900">{percentage}%</span>
           </div>
           <div className="w-full bg-gray-200 rounded-full h-2">
@@ -146,32 +159,6 @@ function MachineCard({
           <span className="text-sm font-semibold text-gray-900">{elapsedTime}</span>
         </div>
 
-        {/* Stops - Day Shift */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <svg className="w-5 h-5 text-yellow-500" fill="currentColor" viewBox="0 0 20 20">
-              <path
-                fillRule="evenodd"
-                d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z"
-                clipRule="evenodd"
-              />
-            </svg>
-            <span className="text-sm text-gray-600">Stops (Day)</span>
-          </div>
-          <span className="text-sm font-semibold text-gray-900">{dayStops}</span>
-        </div>
-
-        {/* Stops - Night Shift */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <svg className="w-5 h-5 text-indigo-500" fill="currentColor" viewBox="0 0 20 20">
-              <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
-            </svg>
-            <span className="text-sm text-gray-600">Stops (Night)</span>
-          </div>
-          <span className="text-sm font-semibold text-gray-900">{nightStops}</span>
-        </div>
-
         {/* Total Stops */}
         <div className="flex items-center justify-between border-t border-gray-200 pt-2">
           <div className="flex items-center gap-2">
@@ -182,101 +169,24 @@ function MachineCard({
                 clipRule="evenodd"
               />
             </svg>
-            <span className="text-sm font-medium text-gray-700">Total Stops (Today)</span>
+            <span className="text-sm font-medium text-gray-700">Stops</span>
           </div>
           <span className="text-sm font-bold text-gray-900">{totalStops}</span>
         </div>
 
-        {/* Stop Time */}
-        {!isRunning && (
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <svg className="w-5 h-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
-                <path
-                  fillRule="evenodd"
-                  d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z"
-                  clipRule="evenodd"
-                />
-              </svg>
-              <span className="text-sm text-gray-600">Stop</span>
-            </div>
-            <span className="text-sm font-semibold text-gray-900">{elapsedTime}</span>
-          </div>
-        )}
-
-        {/* Alter Stitches - Placeholder */}
+        {/* Total Stop Time */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-5 h-5 text-red-500" fill="currentColor" viewBox="0 0 20 20">
               <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"
+                fillRule="evenodd"
+                d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z"
+                clipRule="evenodd"
               />
             </svg>
-            <span className="text-sm text-gray-600">Alter Stitches</span>
+            <span className="text-sm font-medium text-gray-700">Stop Time</span>
           </div>
-          <span className="text-sm font-semibold text-gray-900">-</span>
-        </div>
-
-        {/* Thread Break (TB) - Placeholder */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
-            <span className="text-sm text-gray-600">Thread Break (TB)</span>
-          </div>
-          <span className="text-sm font-semibold text-gray-900">-</span>
-        </div>
-
-        {/* TB Head - Placeholder */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <svg className="w-5 h-5 text-gray-500" fill="currentColor" viewBox="0 0 20 20">
-              <path d="M5 3a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2V5a2 2 0 00-2-2H5zM5 11a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 00-2-2H5zM11 5a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V5zM11 13a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-            </svg>
-            <span className="text-sm text-gray-600">TB Head</span>
-          </div>
-          <span className="text-sm font-semibold text-gray-900">0,0,0</span>
-        </div>
-
-        {/* Comment - Placeholder */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
-              />
-            </svg>
-            <span className="text-sm text-gray-600">Comment</span>
-          </div>
-          <span className="text-sm font-semibold text-gray-400">-</span>
-        </div>
-
-        {/* Employee Name - Placeholder */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
-              />
-            </svg>
-            <span className="text-sm text-gray-600">Employee Name</span>
-          </div>
-          <span className="text-sm font-semibold text-gray-400">-</span>
+          <span className="text-sm font-bold text-gray-900">{formatDuration(totalStopTime)}</span>
         </div>
       </div>
     </div>
@@ -293,12 +203,19 @@ export default function MachineCards() {
   const [machineNames, setMachineNames] = useState<Map<number, string>>(new Map())
   const [factoryId, setFactoryId] = useState<number | null>(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [selectedMachine, setSelectedMachine] = useState<MachineLiveData | null>(null)
 
   // Fetch machines from REST API as fallback
   const { machines: apiMachines, loading: apiLoading, refetch: refetchMachines } = useMachines()
 
   // Fetch stop counts for the factory
   const { stopCounts, isLoading: stopCountsLoading, refetch: refetchStopCounts } = useMachineStopCounts({
+    factoryId,
+    enabled: !!factoryId,
+  })
+
+  // Fetch stop times for the factory
+  const { stopTimes, isLoading: stopTimesLoading, refetch: refetchStopTimes } = useMachineStopTimes({
     factoryId,
     enabled: !!factoryId,
   })
@@ -443,6 +360,7 @@ export default function MachineCards() {
         refreshWebSocket(),
         refetchMachines(),
         refetchStopCounts(),
+        refetchStopTimes(),
       ])
     } catch (err) {
       console.error('Failed to refresh machine data:', err)
@@ -550,9 +468,21 @@ export default function MachineCards() {
             key={machine.machineNumber}
             machine={machine}
             stopCounts={stopCounts[machine.machineNumber]}
+            stopTimes={stopTimes[machine.machineNumber]}
+            onClick={() => setSelectedMachine(machine)}
           />
         ))}
       </div>
+      )}
+
+      {/* Machine Detail Modal */}
+      {selectedMachine && (
+        <MachineDetailModal
+          machine={selectedMachine}
+          stopCounts={stopCounts[selectedMachine.machineNumber]}
+          stopTimes={stopTimes[selectedMachine.machineNumber]}
+          onClose={() => setSelectedMachine(null)}
+        />
       )}
     </div>
   )

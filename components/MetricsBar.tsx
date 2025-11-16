@@ -47,7 +47,7 @@ export default function MetricsBar({ machines }: MetricsBarProps) {
     { label: 'Avg Speed (RPM)', value: metrics.avgSpeed },
     { label: 'Running', value: metrics.running },
     { label: 'Stopped', value: metrics.stopped },
-    { label: 'Total Stop Events', value: metrics.totalStopEvents },
+    // { label: 'Total Stop Events', value: metrics.totalStopEvents },
     { label: 'All Machines', value: metrics.allMachines },
   ]
 
