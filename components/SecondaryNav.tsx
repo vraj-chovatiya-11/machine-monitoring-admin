@@ -2,7 +2,7 @@
 
 import { cn } from '@/lib/utils'
 
-const tabs = ['Cards', 'Lists', 'Custom', 'Summary', 'Dashboard'] as const
+const tabs = ['Cards', 'Lists', 'Custom', 'Dashboard'] as const
 
 interface SecondaryNavProps {
   activeTab: typeof tabs[number]

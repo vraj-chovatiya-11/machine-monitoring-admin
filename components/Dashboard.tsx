@@ -7,17 +7,26 @@ import MetricsBar from './MetricsBar'
 import StatusBar from './StatusBar'
 import MachineCards from './MachineCards'
 import MachineList from './MachineList'
+import MachineListView from './MachineListView'
+import CustomView from './CustomView'
 import LogViewer from './LogViewer'
 import LogFilters from './LogFilters'
 import MachineLiveMonitor from './MachineLiveMonitor'
 import { useCurrentUser } from '@/hooks/useCurrentUser'
+import { useMachineMonitor } from '@/hooks/useMachineMonitor'
 import type { LogFilter } from '@/types'
 
 export default function Dashboard() {
   const [selectedMachineId, setSelectedMachineId] = useState<string | undefined>()
   const [filters, setFilters] = useState<LogFilter>({})
-  const [activeView, setActiveView] = useState<'Cards' | 'Lists' | 'Custom' | 'Summary' | 'Dashboard'>('Dashboard')
+  const [activeView, setActiveView] = useState<'Cards' | 'Lists' | 'Custom' | 'Dashboard'>('Dashboard')
   const { userId, loading: userLoading } = useCurrentUser()
+
+  // Fetch machine data for metrics bar
+  const { machines: metricsMachines } = useMachineMonitor({
+    userId: userId || 0,
+    enabled: !!userId,
+  })
 
   const renderContent = () => {
     switch (activeView) {
@@ -50,21 +59,14 @@ export default function Dashboard() {
         return <MachineCards />
       case 'Lists':
         return (
-          <div className="flex h-[calc(100vh-280px)]">
-            <aside className="w-64 bg-white border-r border-gray-200 overflow-y-auto">
-              <MachineList
-                selectedMachineId={selectedMachineId}
-                onSelectMachine={setSelectedMachineId}
-              />
-            </aside>
-            <main className="flex-1 flex flex-col overflow-hidden">
-              <div className="p-4 border-b border-gray-200">
-                <LogFilters filters={filters} onFiltersChange={setFilters} />
-              </div>
-              <div className="flex-1 overflow-hidden">
-                <LogViewer machineId={selectedMachineId} filters={filters} />
-              </div>
-            </main>
+          <div className="p-6">
+            <MachineListView />
+          </div>
+        )
+      case 'Custom':
+        return (
+          <div className="p-6">
+            <CustomView />
           </div>
         )
       default:
@@ -78,7 +80,7 @@ export default function Dashboard() {
       <SecondaryNav activeTab={activeView} onTabChange={setActiveView} />
       <div className="bg-white border-b border-gray-200">
         <div className="flex items-center justify-between">
-          <MetricsBar />
+          <MetricsBar machines={metricsMachines} />
           <StatusBar />
         </div>
       </div>

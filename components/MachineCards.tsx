@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback } from 'react'
 import { useCurrentUser } from '@/hooks/useCurrentUser'
 import { useMachineMonitor } from '@/hooks/useMachineMonitor'
 import { useMachines } from '@/hooks/useMachines'
-import { machineService } from '@/services/api'
+import { useMachineStopCounts } from '@/hooks/useMachineStopCounts'
+import { machineService, default as apiClient } from '@/services/api'
 import { formatDistanceToNow } from 'date-fns'
 import type { MachineLiveData, MonitorLog } from '@/types/machineMonitor'
 import type { Machine } from '@/types'
@@ -30,7 +31,13 @@ function calculatePercentage(stitches: number): number {
 /**
  * Machine Card Component
  */
-function MachineCard({ machine }: { machine: MachineLiveData }) {
+function MachineCard({
+  machine,
+  stopCounts,
+}: {
+  machine: MachineLiveData
+  stopCounts?: { day: number; night: number; total: number }
+}) {
   const [currentTime, setCurrentTime] = useState(new Date())
   const isRunning = machine.machineStatus === 1
   const percentage = calculatePercentage(machine.pikCounter)
@@ -46,6 +53,10 @@ function MachineCard({ machine }: { machine: MachineLiveData }) {
   // Calculate elapsed time since last update (this represents time in current state)
   const elapsedSeconds = Math.max(0, Math.floor((currentTime.getTime() - machine.lastUpdated.getTime()) / 1000))
   const elapsedTime = formatDuration(elapsedSeconds)
+
+  const dayStops = stopCounts?.day || 0
+  const nightStops = stopCounts?.night || 0
+  const totalStops = stopCounts?.total || 0
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md transition-shadow overflow-hidden">
@@ -135,20 +146,45 @@ function MachineCard({ machine }: { machine: MachineLiveData }) {
           <span className="text-sm font-semibold text-gray-900">{elapsedTime}</span>
         </div>
 
-        {/* Stops */}
+        {/* Stops - Day Shift */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-5 h-5 text-yellow-500" fill="currentColor" viewBox="0 0 20 20">
               <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                fillRule="evenodd"
+                d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z"
+                clipRule="evenodd"
               />
             </svg>
-            <span className="text-sm text-gray-600">Stops</span>
+            <span className="text-sm text-gray-600">Stops (Day)</span>
           </div>
-          <span className="text-sm font-semibold text-gray-900">{machine.machineStopEvents}</span>
+          <span className="text-sm font-semibold text-gray-900">{dayStops}</span>
+        </div>
+
+        {/* Stops - Night Shift */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <svg className="w-5 h-5 text-indigo-500" fill="currentColor" viewBox="0 0 20 20">
+              <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
+            </svg>
+            <span className="text-sm text-gray-600">Stops (Night)</span>
+          </div>
+          <span className="text-sm font-semibold text-gray-900">{nightStops}</span>
+        </div>
+
+        {/* Total Stops */}
+        <div className="flex items-center justify-between border-t border-gray-200 pt-2">
+          <div className="flex items-center gap-2">
+            <svg className="w-5 h-5 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+              <path
+                fillRule="evenodd"
+                d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                clipRule="evenodd"
+              />
+            </svg>
+            <span className="text-sm font-medium text-gray-700">Total Stops (Today)</span>
+          </div>
+          <span className="text-sm font-bold text-gray-900">{totalStops}</span>
         </div>
 
         {/* Stop Time */}
@@ -255,10 +291,17 @@ function MachineCard({ machine }: { machine: MachineLiveData }) {
 export default function MachineCards() {
   const { userId, loading: userLoading } = useCurrentUser()
   const [machineNames, setMachineNames] = useState<Map<number, string>>(new Map())
+  const [factoryId, setFactoryId] = useState<number | null>(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
 
   // Fetch machines from REST API as fallback
   const { machines: apiMachines, loading: apiLoading, refetch: refetchMachines } = useMachines()
+
+  // Fetch stop counts for the factory
+  const { stopCounts, isLoading: stopCountsLoading, refetch: refetchStopCounts } = useMachineStopCounts({
+    factoryId,
+    enabled: !!factoryId,
+  })
 
   // Use WebSocket hook for real-time monitoring
   const {
@@ -276,19 +319,64 @@ export default function MachineCards() {
   /**
    * Fetch machine names from REST API to preserve machine names
    * This is done once to get the initial machine names
+   * Also extracts factory_id from the API response
    */
   const fetchMachineNames = useCallback(async () => {
     try {
-      const machineList = await machineService.getMachines(1, 100) // Get more machines to ensure we have all names
+      // Fetch machines with full response to get factory_id
+      const response = await apiClient.get<{
+        success: boolean
+        data: {
+          data: Array<{
+            admin: any
+            factory: Array<{
+              id: number
+              machine: Array<{
+                id: number
+                machine_name: string
+                fac_machine_number: number
+                factory_id: number
+                [key: string]: any
+              }>
+              [key: string]: any
+            }>
+          }>
+        }
+      }>('/machine', {
+        params: { page: 1, limit: 100 },
+      })
 
       const namesMap = new Map<number, string>()
-      machineList
-        .filter((machine) => machine.fac_machine_number !== undefined)
-        .forEach((machine) => {
-          namesMap.set(machine.fac_machine_number || 0, machine.name || `M${machine.fac_machine_number || 0}`)
-        })
+      let firstFactoryId: number | null = null
+
+      // Extract machine names and factory_id from nested structure
+      const responseData = response.data.data?.data || []
+      for (const adminGroup of responseData) {
+        if (adminGroup.factory && Array.isArray(adminGroup.factory)) {
+          for (const factory of adminGroup.factory) {
+            // Get factory_id from first factory
+            if (firstFactoryId === null && factory.id) {
+              firstFactoryId = factory.id
+            }
+
+            if (factory.machine && Array.isArray(factory.machine)) {
+              for (const machine of factory.machine) {
+                if (machine.fac_machine_number !== undefined) {
+                  namesMap.set(
+                    machine.fac_machine_number,
+                    machine.machine_name || `M${machine.fac_machine_number}`
+                  )
+                }
+              }
+            }
+          }
+        }
+      }
 
       setMachineNames(namesMap)
+      if (firstFactoryId !== null) {
+        setFactoryId(firstFactoryId)
+      }
     } catch (err) {
       console.error('Failed to fetch machine names:', err)
     }
@@ -350,7 +438,12 @@ export default function MachineCards() {
   const handleRefresh = async () => {
     setIsRefreshing(true)
     try {
-      await Promise.all([fetchMachineNames(), refreshWebSocket(), refetchMachines()])
+      await Promise.all([
+        fetchMachineNames(),
+        refreshWebSocket(),
+        refetchMachines(),
+        refetchStopCounts(),
+      ])
     } catch (err) {
       console.error('Failed to refresh machine data:', err)
     } finally {
@@ -451,9 +544,13 @@ export default function MachineCards() {
           <div className="text-sm text-gray-500">No machine data available at this time.</div>
           </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {machines.map((machine) => (
-            <MachineCard key={machine.machineNumber} machine={machine} />
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        {machines.map((machine) => (
+          <MachineCard
+            key={machine.machineNumber}
+            machine={machine}
+            stopCounts={stopCounts[machine.machineNumber]}
+          />
         ))}
       </div>
       )}

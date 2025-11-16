@@ -265,6 +265,43 @@ export const machineService = {
     const response = await apiClient.patch<{ success: boolean; data: { id?: number; user_id?: number; username?: string; name?: string; email?: string; phone?: string; status?: string; role?: string; ownerId?: number; [key: string]: any }; meta?: Record<string, unknown> }>(`/users/admins/${adminId}`, updates)
     return response.data.data
   },
+
+  /**
+   * Get stop counts for machines
+   * Returns stop counts grouped by shift (day/night) for today
+   * Backend returns: { success: true, data: { [machineNumber]: { day: number, night: number, total: number } }, meta: {} }
+   */
+  async getFactoryMachinesStopCounts(factoryId: number): Promise<Record<number, { day: number; night: number; total: number }>> {
+    const response = await apiClient.get<{
+      success: boolean
+      data: Record<number, { day: number; night: number; total: number }>
+      meta?: any
+    }>('/machine/stop-counts/factory', {
+      params: {
+        factory_id: factoryId,
+      },
+    })
+    return response.data.data || {}
+  },
+
+  /**
+   * Get stop counts for a specific machine
+   * Returns stop counts for today grouped by shift
+   * Backend returns: { success: true, data: { day: number, night: number, total: number }, meta: {} }
+   */
+  async getMachineStopCounts(factoryId: number, machineNumber: number): Promise<{ day: number; night: number; total: number }> {
+    const response = await apiClient.get<{
+      success: boolean
+      data: { day: number; night: number; total: number }
+      meta?: any
+    }>('/machine/stop-counts/machine', {
+      params: {
+        factory_id: factoryId,
+        machine_number: machineNumber,
+      },
+    })
+    return response.data.data || { day: 0, night: 0, total: 0 }
+  },
 }
 
 export default apiClient
