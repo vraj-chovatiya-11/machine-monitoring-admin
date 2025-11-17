@@ -15,7 +15,7 @@ const navItems: NavItem[] = [
   { label: 'Dashboard', icon: 'grid', path: '/' },
   { label: 'Reports', icon: 'document', path: '/reports' },
   { label: 'Profile', icon: 'person', path: '/profile' },
-  { label: 'Admin', icon: 'gear', path: '/admin' },
+  // { label: 'Admin', icon: 'gear', path: '/admin' },
 ]
 
 export default function Header() {

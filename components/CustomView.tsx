@@ -1,8 +1,11 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useMachineMonitor } from '@/hooks/useMachineMonitor'
 import { useCurrentUser } from '@/hooks/useCurrentUser'
+import { useMachineStopTimes } from '@/hooks/useMachineStopTimes'
+import { calculateEfficiency } from '@/lib/utils'
+import { default as apiClient } from '@/services/api'
 import type { MachineLiveData } from '@/types/machineMonitor'
 
 /**
@@ -23,10 +26,17 @@ function calculateAverageSpeed(machines: MachineLiveData[]): number {
   return Math.round(totalSpeed / machines.length)
 }
 
+type EfficiencyBand = '0-60' | '60-70' | '70-90' | '90-100' | ''
+type SpeedBand = '0-500' | '500-700' | '700-800' | '800-900' | '900+' | ''
+type StopFrequencyBand = '0-10' | '10-20' | '20+' | ''
+
 interface MachineFilters {
   machineName: string
   minSpeed: string
   maxSpeed: string
+  efficiencyBand: EfficiencyBand
+  speedBand: SpeedBand
+  stopFrequencyBand: StopFrequencyBand
 }
 
 /**
@@ -42,11 +52,65 @@ export default function CustomView() {
 
   const [currentTime, setCurrentTime] = useState(new Date())
   const [selectedRow, setSelectedRow] = useState<number | null>(null)
+  const [factoryId, setFactoryId] = useState<number | null>(null)
   const [filters, setFilters] = useState<MachineFilters>({
     machineName: '',
     minSpeed: '',
     maxSpeed: '',
+    efficiencyBand: '',
+    speedBand: '',
+    stopFrequencyBand: '',
   })
+
+  // Fetch stop times for efficiency calculation
+  const { stopTimes } = useMachineStopTimes({
+    factoryId,
+    enabled: !!factoryId,
+  })
+
+  // Fetch factory ID from machine API
+  const fetchFactoryId = useCallback(async () => {
+    try {
+      const response = await apiClient.get<{
+        success: boolean
+        data: {
+          data: Array<{
+            factory: Array<{
+              id: number
+              machine: Array<{
+                fac_machine_number: number
+                [key: string]: any
+              }>
+              [key: string]: any
+            }>
+            [key: string]: any
+          }>
+        }
+      }>('/machine', {
+        params: { page: 1, limit: 100 },
+      })
+
+      const responseData = response.data.data?.data || []
+      for (const adminGroup of responseData) {
+        if (adminGroup.factory && Array.isArray(adminGroup.factory)) {
+          for (const factory of adminGroup.factory) {
+            if (factory.id) {
+              setFactoryId(factory.id)
+              return
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch factory ID:', err)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (userId && !userLoading) {
+      fetchFactoryId()
+    }
+  }, [userId, userLoading, fetchFactoryId])
 
   // Update current time every second for live duration calculation
   useEffect(() => {
@@ -55,6 +119,39 @@ export default function CustomView() {
     }, 1000)
     return () => clearInterval(interval)
   }, [])
+
+  /**
+   * Calculate efficiency bands from thresholds
+   * Thresholds [60, 70, 90] create bands: 0-60, 60-70, 70-90, 90-100
+   */
+  const getEfficiencyBand = (efficiency: number): EfficiencyBand => {
+    if (efficiency < 60) return '0-60'
+    if (efficiency < 70) return '60-70'
+    if (efficiency < 90) return '70-90'
+    return '90-100'
+  }
+
+  /**
+   * Calculate speed bands from thresholds
+   * Thresholds [0, 500, 700, 800, 900] create bands: 0-500, 500-700, 700-800, 800-900, 900+
+   */
+  const getSpeedBand = (speed: number): SpeedBand => {
+    if (speed < 500) return '0-500'
+    if (speed < 700) return '500-700'
+    if (speed < 800) return '700-800'
+    if (speed < 900) return '800-900'
+    return '900+'
+  }
+
+  /**
+   * Calculate stop frequency bands from thresholds
+   * Thresholds [10, 20] create bands: 0-10, 10-20, 20+ (based on stop events over last 30 min)
+   */
+  const getStopFrequencyBand = (stopEvents: number): StopFrequencyBand => {
+    if (stopEvents < 10) return '0-10'
+    if (stopEvents < 20) return '10-20'
+    return '20+'
+  }
 
   /**
    * Filter machines based on current filter criteria
@@ -84,9 +181,35 @@ export default function CustomView() {
         }
       }
 
+      // Filter by efficiency band
+      if (filters.efficiencyBand) {
+        const totalStopTime = stopTimes[machine.machineNumber]?.total || 0
+        const efficiency = calculateEfficiency(totalStopTime)
+        const machineBand = getEfficiencyBand(efficiency)
+        if (machineBand !== filters.efficiencyBand) {
+          return false
+        }
+      }
+
+      // Filter by speed band
+      if (filters.speedBand) {
+        const machineSpeedBand = getSpeedBand(machine.fre_RPM)
+        if (machineSpeedBand !== filters.speedBand) {
+          return false
+        }
+      }
+
+      // Filter by stop frequency band (based on stop events over last 30 min)
+      if (filters.stopFrequencyBand) {
+        const machineStopFrequencyBand = getStopFrequencyBand(machine.machineStopEvents)
+        if (machineStopFrequencyBand !== filters.stopFrequencyBand) {
+          return false
+        }
+      }
+
       return true
     })
-  }, [machines, filters])
+  }, [machines, filters, stopTimes])
 
   /**
    * Update filter value
@@ -103,10 +226,13 @@ export default function CustomView() {
       machineName: '',
       minSpeed: '',
       maxSpeed: '',
+      efficiencyBand: '',
+      speedBand: '',
+      stopFrequencyBand: '',
     })
   }
 
-  const hasActiveFilters = filters.machineName || filters.minSpeed || filters.maxSpeed
+  const hasActiveFilters = filters.machineName || filters.minSpeed || filters.maxSpeed || filters.efficiencyBand || filters.speedBand || filters.stopFrequencyBand
 
   if (userLoading || isLoading) {
     return (
@@ -175,6 +301,51 @@ export default function CustomView() {
               min="0"
               className="px-3 py-1.5 bg-white border border-gray-300 rounded text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-24"
             />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-medium text-gray-700 whitespace-nowrap">Efficiency:</label>
+            <select
+              value={filters.efficiencyBand}
+              onChange={(e) => updateFilter('efficiencyBand', e.target.value as EfficiencyBand)}
+              className="px-3 py-1.5 bg-white border border-gray-300 rounded text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-w-[120px]"
+            >
+              <option value="">All</option>
+              <option value="0-60">0-60%</option>
+              <option value="60-70">60-70%</option>
+              <option value="70-90">70-90%</option>
+              <option value="90-100">90-100%</option>
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-medium text-gray-700 whitespace-nowrap">Speed:</label>
+            <select
+              value={filters.speedBand}
+              onChange={(e) => updateFilter('speedBand', e.target.value as SpeedBand)}
+              className="px-3 py-1.5 bg-white border border-gray-300 rounded text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-w-[120px]"
+            >
+              <option value="">All</option>
+              <option value="0-500">0-500 RPM</option>
+              <option value="500-700">500-700 RPM</option>
+              <option value="700-800">700-800 RPM</option>
+              <option value="800-900">800-900 RPM</option>
+              <option value="900+">900+ RPM</option>
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-medium text-gray-700 whitespace-nowrap">Stop Frequency:</label>
+            <select
+              value={filters.stopFrequencyBand}
+              onChange={(e) => updateFilter('stopFrequencyBand', e.target.value as StopFrequencyBand)}
+              className="px-3 py-1.5 bg-white border border-gray-300 rounded text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-w-[120px]"
+            >
+              <option value="">All</option>
+              <option value="0-10">0-10 events</option>
+              <option value="10-20">10-20 events</option>
+              <option value="20+">20+ events</option>
+            </select>
           </div>
 
           {hasActiveFilters && (

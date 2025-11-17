@@ -482,34 +482,6 @@ export default function ProfilePage() {
                     </button>
                   </div>
                 )}
-
-                {!isEditing && Object.keys(adminData).length > 0 && (
-                  <div className="mt-8 pt-6 border-t border-gray-200">
-                    <details className="group">
-                      <summary className="cursor-pointer text-sm font-medium text-gray-700 hover:text-gray-900 flex items-center gap-2">
-                        <svg
-                          className="w-5 h-5 transition-transform group-open:rotate-90"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M9 5l7 7-7 7"
-                          />
-                        </svg>
-                        View Raw Data
-                      </summary>
-                      <div className="mt-4 bg-gray-50 rounded-lg p-4 overflow-x-auto">
-                        <pre className="text-xs text-gray-700">
-                          {JSON.stringify(adminData, null, 2)}
-                        </pre>
-                      </div>
-                    </details>
-                  </div>
-                )}
               </div>
             </div>
           )}

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useCurrentUser } from '@/hooks/useCurrentUser'
 import { useMachineMonitor } from '@/hooks/useMachineMonitor'
 import { useMachines } from '@/hooks/useMachines'
@@ -12,6 +12,10 @@ import { calculateEfficiency } from '@/lib/utils'
 import type { MachineLiveData, MonitorLog } from '@/types/machineMonitor'
 import type { Machine } from '@/types'
 import MachineDetailModal from './MachineDetailModal'
+
+type EfficiencyBand = '0-60' | '60-70' | '70-90' | '90-100' | ''
+type SpeedBand = '0-500' | '500-700' | '700-800' | '800-900' | '900+' | ''
+type StopFrequencyBand = '0-10' | '10-20' | '20+' | ''
 
 /**
  * Format time duration in HH:MM:SS format (or MM:SS if less than an hour)
@@ -49,6 +53,18 @@ function MachineCard({
   const totalStopTime = stopTimes?.total || 0
   const efficiency = calculateEfficiency(totalStopTime)
 
+  // Determine card color based on status and efficiency
+  // Green: RUN & eff ≥ 90, Yellow: RUN & 70-90, Red: STOP or eff < 70
+  const getCardColor = (): string => {
+    if (!isRunning || efficiency < 70) {
+      return 'bg-red-500' // Red: STOP or eff < 70
+    }
+    if (efficiency >= 90) {
+      return 'bg-green-500' // Green: RUN & eff ≥ 90
+    }
+    return 'bg-yellow-500' // Yellow: RUN & 70-90
+  }
+
   // Update current time every second for live timer
   useEffect(() => {
     const interval = setInterval(() => {
@@ -70,9 +86,7 @@ function MachineCard({
     >
       {/* Header */}
       <div
-        className={`px-4 py-3 flex items-center justify-between ${
-          isRunning ? 'bg-green-500' : 'bg-red-500'
-        }`}
+        className={`px-4 py-3 flex items-center justify-between ${getCardColor()}`}
       >
         <div className="flex items-center gap-2">
           <span className="text-white font-semibold text-lg">{machine.machineName}</span>
@@ -199,6 +213,9 @@ export default function MachineCards() {
   const [factoryId, setFactoryId] = useState<number | null>(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [selectedMachine, setSelectedMachine] = useState<MachineLiveData | null>(null)
+  const [efficiencyBand, setEfficiencyBand] = useState<EfficiencyBand>('')
+  const [speedBand, setSpeedBand] = useState<SpeedBand>('')
+  const [stopFrequencyBand, setStopFrequencyBand] = useState<StopFrequencyBand>('')
 
   // Fetch machines from REST API as fallback
   const { machines: apiMachines, loading: apiLoading, refetch: refetchMachines } = useMachines()
@@ -227,6 +244,8 @@ export default function MachineCards() {
     userId: userId || 0,
     enabled: !!userId,
   })
+
+  const lastUpdateEpoch = lastUpdateTime?.getTime() ?? null
 
   /**
    * Fetch machine names from REST API to preserve machine names
@@ -334,7 +353,7 @@ export default function MachineCards() {
    * Use WebSocket machines if available, otherwise fallback to API machines
    * Merge live data with API machines to show all machines
    */
-  const machines: MachineLiveData[] = (() => {
+  const allMachines: MachineLiveData[] = (() => {
     if (wsMachinesWithNames.length > 0) {
       // If we have live data, use it and merge with API machines for any missing ones
       const wsMachineNumbers = new Set(wsMachinesWithNames.map((m) => m.machineNumber))
@@ -346,6 +365,86 @@ export default function MachineCards() {
       return convertApiMachinesToLiveData(apiMachines)
     }
   })()
+
+  /**
+   * Calculate efficiency bands from thresholds
+   * Thresholds [60, 70, 90] create bands: 0-60, 60-70, 70-90, 90-100
+   */
+  const getEfficiencyBand = (efficiency: number): EfficiencyBand => {
+    if (efficiency < 60) return '0-60'
+    if (efficiency < 70) return '60-70'
+    if (efficiency < 90) return '70-90'
+    return '90-100'
+  }
+
+  /**
+   * Calculate speed bands from thresholds
+   * Thresholds [0, 500, 700, 800, 900] create bands: 0-500, 500-700, 700-800, 800-900, 900+
+   */
+  const getSpeedBand = (speed: number): SpeedBand => {
+    if (speed < 500) return '0-500'
+    if (speed < 700) return '500-700'
+    if (speed < 800) return '700-800'
+    if (speed < 900) return '800-900'
+    return '900+'
+  }
+
+  /**
+   * Calculate stop frequency bands from thresholds
+   * Thresholds [10, 20] create bands: 0-10, 10-20, 20+ (based on stop events over last 30 min)
+   */
+  const getStopFrequencyBand = (stopEvents: number): StopFrequencyBand => {
+    if (stopEvents < 10) return '0-10'
+    if (stopEvents < 20) return '10-20'
+    return '20+'
+  }
+
+  /**
+   * Filter machines based on efficiency, speed, and stop frequency bands
+   */
+  const machines = useMemo(() => {
+    let filtered = allMachines
+
+    // Filter by efficiency band
+    if (efficiencyBand) {
+      filtered = filtered.filter((machine) => {
+        const totalStopTime = stopTimes[machine.machineNumber]?.total || 0
+        const efficiency = calculateEfficiency(totalStopTime)
+        const machineBand = getEfficiencyBand(efficiency)
+        return machineBand === efficiencyBand
+      })
+    }
+
+    // Filter by speed band
+    if (speedBand) {
+      filtered = filtered.filter((machine) => {
+        const machineSpeedBand = getSpeedBand(machine.fre_RPM)
+        return machineSpeedBand === speedBand
+      })
+    }
+
+    // Filter by stop frequency band (based on stop events over last 30 min)
+    if (stopFrequencyBand) {
+      filtered = filtered.filter((machine) => {
+        const machineStopFrequencyBand = getStopFrequencyBand(machine.machineStopEvents)
+        return machineStopFrequencyBand === stopFrequencyBand
+      })
+    }
+
+    return filtered
+  }, [allMachines, efficiencyBand, speedBand, stopFrequencyBand, stopTimes])
+
+  /**
+   * Sync stop counts/times whenever live data arrives over WebSocket
+   */
+  useEffect(() => {
+    if (!factoryId || !lastUpdateEpoch) {
+      return
+    }
+
+    refetchStopCounts()
+    refetchStopTimes()
+  }, [factoryId, lastUpdateEpoch, refetchStopCounts, refetchStopTimes])
 
   const handleRefresh = async () => {
     setIsRefreshing(true)
@@ -404,6 +503,54 @@ export default function MachineCards() {
           )}
         </div>
         <div className="flex items-center gap-4">
+          {/* Efficiency Filter */}
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-medium text-gray-700 whitespace-nowrap">Efficiency:</label>
+            <select
+              value={efficiencyBand}
+              onChange={(e) => setEfficiencyBand(e.target.value as EfficiencyBand)}
+              className="px-3 py-1.5 bg-white border border-gray-300 rounded text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-w-[120px]"
+            >
+              <option value="">All</option>
+              <option value="0-60">0-60</option>
+              <option value="60-70">60-70</option>
+              <option value="70-90">70-90</option>
+              <option value="90-100">90-100</option>
+            </select>
+          </div>
+
+          {/* Speed Filter */}
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-medium text-gray-700 whitespace-nowrap">Speed (RPM):</label>
+            <select
+              value={speedBand}
+              onChange={(e) => setSpeedBand(e.target.value as SpeedBand)}
+              className="px-3 py-1.5 bg-white border border-gray-300 rounded text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-w-[120px]"
+            >
+              <option value="">All</option>
+              <option value="0-500">0-500</option>
+              <option value="500-700">500-700</option>
+              <option value="700-800">700-800</option>
+              <option value="800-900">800-900</option>
+              <option value="900+">900+</option>
+            </select>
+          </div>
+
+          {/* Stop Frequency Filter */}
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-medium text-gray-700 whitespace-nowrap">Stop Frequency:</label>
+            <select
+              value={stopFrequencyBand}
+              onChange={(e) => setStopFrequencyBand(e.target.value as StopFrequencyBand)}
+              className="px-3 py-1.5 bg-white border border-gray-300 rounded text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-w-[120px]"
+            >
+              <option value="">All</option>
+              <option value="0-10">0-10 events</option>
+              <option value="10-20">10-20 events</option>
+              <option value="20+">20+ events</option>
+            </select>
+          </div>
+
           {/* Connection Status Indicator */}
           <div className="flex items-center gap-2">
             <div
@@ -453,11 +600,48 @@ export default function MachineCards() {
       {/* Machine Cards Grid */}
       {machines.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-64 text-center">
-          <div className="text-2xl font-semibold text-gray-700 mb-2">No machines to display</div>
-          <div className="text-sm text-gray-500">No machine data available at this time.</div>
+          <div className="text-2xl font-semibold text-gray-700 mb-2">
+            {(efficiencyBand || speedBand || stopFrequencyBand) ? 'No machines match the selected filters' : 'No machines to display'}
           </div>
+          <div className="text-sm text-gray-500">
+            {(efficiencyBand || speedBand || stopFrequencyBand) ? 'Try selecting different filter options.' : 'No machine data available at this time.'}
+          </div>
+          {(efficiencyBand || speedBand || stopFrequencyBand) && (
+            <button
+              onClick={() => {
+                setEfficiencyBand('')
+                setSpeedBand('')
+                setStopFrequencyBand('')
+              }}
+              className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              Clear Filters
+            </button>
+          )}
+        </div>
       ) : (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        <>
+          {(efficiencyBand || speedBand || stopFrequencyBand) && (
+            <div className="mb-4 flex items-center justify-between px-4 py-2 bg-blue-50 border border-blue-200 rounded-lg">
+              <span className="text-sm text-blue-700">
+                Showing {machines.length} of {allMachines.length} machines
+                {efficiencyBand && ` (Efficiency: ${efficiencyBand})`}
+                {speedBand && ` (Speed: ${speedBand} RPM)`}
+                {stopFrequencyBand && ` (Stop Frequency: ${stopFrequencyBand} events)`}
+              </span>
+              <button
+                onClick={() => {
+                  setEfficiencyBand('')
+                  setSpeedBand('')
+                  setStopFrequencyBand('')
+                }}
+                className="text-sm text-blue-600 hover:text-blue-800 underline"
+              >
+                Clear Filters
+              </button>
+            </div>
+          )}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {machines.map((machine) => (
           <MachineCard
             key={machine.machineNumber}
@@ -467,7 +651,8 @@ export default function MachineCards() {
             onClick={() => setSelectedMachine(machine)}
           />
         ))}
-      </div>
+          </div>
+        </>
       )}
 
       {/* Machine Detail Modal */}
