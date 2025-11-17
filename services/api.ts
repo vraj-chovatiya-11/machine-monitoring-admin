@@ -1,5 +1,13 @@
 import axios from 'axios'
-import type { MachineLog, Machine, LogFilter } from '@/types'
+import type {
+  MachineLog,
+  Machine,
+  LogFilter,
+  ReportGenerationPayload,
+  ReportListResult,
+  ReportQueryFilters,
+  ReportRecord,
+} from '@/types'
 import type { MonitorLog } from '@/types/machineMonitor'
 
 // Get API URL from environment, defaulting to localhost:3001/api
@@ -37,6 +45,22 @@ apiClient.interceptors.request.use((config) => {
   }
   return config
 })
+
+const extractFileNameFromDisposition = (header?: string | null): string | null => {
+  if (!header) {
+    return null
+  }
+  const utfEncoded = header.match(/filename\*=UTF-8''([^;]+)/i)
+  if (utfEncoded?.[1]) {
+    try {
+      return decodeURIComponent(utfEncoded[1].replace(/\+/g, '%20'))
+    } catch (_error) {
+      return utfEncoded[1]
+    }
+  }
+  const plain = header.match(/filename="?([^\";]+)"?/i)
+  return plain?.[1] ?? null
+}
 
 // Add response interceptor to handle authentication errors
 apiClient.interceptors.response.use(
@@ -340,6 +364,63 @@ export const machineService = {
       },
     })
     return response.data.data || { day: 0, night: 0, total: 0 }
+  },
+}
+
+export const reportService = {
+  async generateReport(payload: ReportGenerationPayload): Promise<ReportRecord> {
+    const response = await apiClient.post<{ success: boolean; data: ReportRecord }>(
+      '/reports/machine-performance',
+      payload
+    )
+    return response.data.data
+  },
+
+  async listReports(
+    params?: (ReportQueryFilters & { page?: number; limit?: number | 'all' }) | undefined
+  ): Promise<ReportListResult> {
+    const queryParams: Record<string, string | number> = {}
+    if (params?.page) {
+      queryParams.page = params.page
+    }
+    if (params?.limit !== undefined) {
+      queryParams.limit = params.limit === 'all' ? 'all' : params.limit
+    }
+    if (params?.machine_number) {
+      queryParams.machine_number = params.machine_number
+    }
+    if (params?.range_type) {
+      queryParams.range_type = params.range_type
+    }
+    if (params?.file_format) {
+      queryParams.file_format = params.file_format
+    }
+    if (params?.status) {
+      queryParams.status = params.status
+    }
+    if (params?.admin_id) {
+      queryParams.admin_id = params.admin_id
+    }
+
+    const response = await apiClient.get<{ success: boolean; data: ReportListResult }>('/reports', {
+      params: queryParams,
+    })
+
+    return response.data.data ?? { data: [], pagination: undefined }
+  },
+
+  async downloadReport(reportId: number): Promise<{ blob: Blob; fileName: string }> {
+    const response = await apiClient.get<Blob>(`/reports/${reportId}/download`, {
+      responseType: 'blob',
+    })
+    const fileName =
+      extractFileNameFromDisposition(response.headers['content-disposition']) ??
+      `report-${reportId}`
+
+    return {
+      blob: response.data,
+      fileName,
+    }
   },
 }
 

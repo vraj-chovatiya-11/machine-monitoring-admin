@@ -189,7 +189,7 @@ export default function MachineLiveMonitor({ userId }: MachineLiveMonitorProps) 
                   <tr
                     key={machine.machineNumber}
                     className={`hover:bg-gray-50 transition-colors ${
-                      isAlert ? 'bg-red-50 border-l-4 border-red-500' : ''
+                      isAlert ? '' : ''
                     }`}
                   >
                     <td className="px-6 py-4 whitespace-nowrap">
