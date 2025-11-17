@@ -382,6 +382,9 @@ export default function CustomView() {
                 Avg.
               </th>
               <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                Efficiency
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                 Duration
               </th>
               <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
@@ -392,7 +395,7 @@ export default function CustomView() {
           <tbody className="bg-white divide-y divide-gray-200">
             {filteredMachines.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
+                <td colSpan={7} className="px-6 py-8 text-center text-gray-500">
                   No machines match the current filters
                 </td>
               </tr>
@@ -409,6 +412,17 @@ export default function CustomView() {
                 )
                 const duration = formatDuration(elapsedSeconds)
                 const isLongDuration = elapsedSeconds > 120 // More than 2 minutes in red
+
+                const stopTimeSeconds = stopTimes[machine.machineNumber]?.total
+                const efficiency = stopTimeSeconds !== undefined ? calculateEfficiency(stopTimeSeconds) : null
+                const efficiencyColor =
+                  efficiency === null
+                    ? 'text-gray-400'
+                    : efficiency >= 90
+                      ? 'text-green-600'
+                      : efficiency >= 70
+                        ? 'text-yellow-600'
+                        : 'text-red-600'
 
                 return (
                   <tr
@@ -431,6 +445,11 @@ export default function CustomView() {
                       <div className="text-sm text-gray-900">{avgSpeed}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
+                      <div className={`text-sm font-medium ${efficiencyColor}`}>
+                        {efficiency === null ? '—' : `${efficiency.toFixed(1)}%`}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
                       <div className={`text-sm font-medium ${isLongDuration ? 'text-red-600' : 'text-green-600'}`}>
                         {duration}
                       </div>
@@ -446,23 +465,6 @@ export default function CustomView() {
             )}
           </tbody>
         </table>
-      </div>
-
-      {/* Footer */}
-      <div className="px-6 py-3 bg-gray-50 border-t-2 border-gray-300">
-        <div className="flex items-center justify-between text-xs text-gray-600">
-          <div>
-            <span>For Support +919737369993</span>
-          </div>
-          <div>
-            <span>Company Id: 000 User Id: 000</span>
-          </div>
-        </div>
-        <div className="mt-2">
-          <div className="w-full bg-gray-200 rounded-full h-1">
-            <div className="bg-red-500 h-1 rounded-full" style={{ width: '30%' }}></div>
-          </div>
-        </div>
       </div>
     </div>
   )

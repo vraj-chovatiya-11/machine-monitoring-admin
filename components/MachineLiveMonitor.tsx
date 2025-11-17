@@ -1,6 +1,10 @@
 'use client'
 
+import { useState, useEffect, useCallback } from 'react'
 import { useMachineMonitor } from '@/hooks/useMachineMonitor'
+import { useMachineStopTimes } from '@/hooks/useMachineStopTimes'
+import { calculateEfficiency } from '@/lib/utils'
+import apiClient from '@/services/api'
 import type { ConnectionStatus } from '@/types/machineMonitor'
 import { formatDistanceToNow } from 'date-fns'
 
@@ -51,6 +55,50 @@ export default function MachineLiveMonitor({ userId }: MachineLiveMonitorProps) 
     userId,
     enabled: true,
   })
+
+  const [factoryId, setFactoryId] = useState<number | null>(null)
+
+  const { stopTimes } = useMachineStopTimes({
+    factoryId,
+    enabled: !!factoryId,
+  })
+
+  const fetchFactoryId = useCallback(async () => {
+    try {
+      const response = await apiClient.get<{
+        success: boolean
+        data: {
+          data: Array<{
+            factory: Array<{
+              id: number
+            }>
+          }>
+        }
+      }>('/machine', {
+        params: { page: 1, limit: 100 },
+      })
+
+      const responseData = response.data.data?.data || []
+      for (const adminGroup of responseData) {
+        if (adminGroup.factory && Array.isArray(adminGroup.factory)) {
+          for (const factory of adminGroup.factory) {
+            if (factory.id) {
+              setFactoryId(factory.id)
+              return
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch factory ID:', err)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!factoryId) {
+      fetchFactoryId()
+    }
+  }, [factoryId, fetchFactoryId])
 
   if (isLoading) {
     return (
@@ -113,6 +161,9 @@ export default function MachineLiveMonitor({ userId }: MachineLiveMonitorProps) 
                   Stop Events
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Efficiency
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Last Updated
                 </th>
               </tr>
@@ -122,6 +173,17 @@ export default function MachineLiveMonitor({ userId }: MachineLiveMonitorProps) 
                 const isStopped = machine.machineStatus === 0
                 const hasStopEvents = machine.machineStopEvents > 0
                 const isAlert = isStopped || hasStopEvents
+
+                const stopTimeSeconds = stopTimes[machine.machineNumber]?.total
+                const efficiency = stopTimeSeconds !== undefined ? calculateEfficiency(stopTimeSeconds) : null
+                const efficiencyColor =
+                  efficiency === null
+                    ? 'text-gray-400'
+                    : efficiency >= 90
+                      ? 'text-green-600'
+                      : efficiency >= 70
+                        ? 'text-yellow-600'
+                        : 'text-red-600'
 
                 return (
                   <tr
@@ -159,6 +221,11 @@ export default function MachineLiveMonitor({ userId }: MachineLiveMonitorProps) 
                         }`}
                       >
                         {machine.machineStopEvents}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className={`text-sm font-medium ${efficiencyColor}`}>
+                        {efficiency === null ? '—' : `${efficiency.toFixed(1)}%`}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">

@@ -1,8 +1,11 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useMachineMonitor } from '@/hooks/useMachineMonitor'
 import { useCurrentUser } from '@/hooks/useCurrentUser'
+import { useMachineStopTimes } from '@/hooks/useMachineStopTimes'
+import { calculateEfficiency } from '@/lib/utils'
+import apiClient from '@/services/api'
 import type { MachineLiveData } from '@/types/machineMonitor'
 
 /**
@@ -37,6 +40,49 @@ export default function MachineListView() {
 
   const [currentTime, setCurrentTime] = useState(new Date())
   const [selectedRow, setSelectedRow] = useState<number | null>(null)
+  const [factoryId, setFactoryId] = useState<number | null>(null)
+
+  const { stopTimes } = useMachineStopTimes({
+    factoryId,
+    enabled: !!factoryId,
+  })
+
+  const fetchFactoryId = useCallback(async () => {
+    try {
+      const response = await apiClient.get<{
+        success: boolean
+        data: {
+          data: Array<{
+            factory: Array<{
+              id: number
+            }>
+          }>
+        }
+      }>('/machine', {
+        params: { page: 1, limit: 100 },
+      })
+
+      const responseData = response.data.data?.data || []
+      for (const adminGroup of responseData) {
+        if (adminGroup.factory && Array.isArray(adminGroup.factory)) {
+          for (const factory of adminGroup.factory) {
+            if (factory.id) {
+              setFactoryId(factory.id)
+              return
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch factory ID:', err)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (userId && !userLoading && !factoryId) {
+      fetchFactoryId()
+    }
+  }, [userId, userLoading, factoryId, fetchFactoryId])
 
   // Update current time every second for live duration calculation
   useEffect(() => {
@@ -97,6 +143,9 @@ export default function MachineListView() {
                 Avg.
               </th>
               <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                Efficiency
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                 Duration
               </th>
               <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
@@ -107,7 +156,6 @@ export default function MachineListView() {
           <tbody className="bg-white divide-y divide-gray-200">
             {machines.map((machine) => {
               const isStopped = machine.machineStatus === 0
-              const hasStopEvents = machine.machineStopEvents > 0
               const isSelected = selectedRow === machine.machineNumber
 
               // Calculate duration (time since last update)
@@ -117,6 +165,17 @@ export default function MachineListView() {
               )
               const duration = formatDuration(elapsedSeconds)
               const isLongDuration = elapsedSeconds > 120 // More than 2 minutes in red
+
+              const stopTimeSeconds = stopTimes[machine.machineNumber]?.total
+              const efficiency = stopTimeSeconds !== undefined ? calculateEfficiency(stopTimeSeconds) : null
+              const efficiencyColor =
+                efficiency === null
+                  ? 'text-gray-400'
+                  : efficiency >= 90
+                    ? 'text-green-600'
+                    : efficiency >= 70
+                      ? 'text-yellow-600'
+                      : 'text-red-600'
 
               return (
                 <tr
@@ -139,6 +198,11 @@ export default function MachineListView() {
                     <div className="text-sm text-gray-900">{avgSpeed}</div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
+                    <div className={`text-sm font-medium ${efficiencyColor}`}>
+                      {efficiency === null ? '—' : `${efficiency.toFixed(1)}%`}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
                     <div className={`text-sm font-medium ${isLongDuration ? 'text-red-600' : 'text-green-600'}`}>
                       {duration}
                     </div>
@@ -153,23 +217,6 @@ export default function MachineListView() {
             })}
           </tbody>
         </table>
-      </div>
-
-      {/* Footer */}
-      <div className="px-6 py-3 bg-gray-50 border-t-2 border-gray-300">
-        <div className="flex items-center justify-between text-xs text-gray-600">
-          <div>
-            <span>For Support +919737369993</span>
-          </div>
-          <div>
-            <span>Company Id: 000 User Id: 000</span>
-          </div>
-        </div>
-        <div className="mt-2">
-          <div className="w-full bg-gray-200 rounded-full h-1">
-            <div className="bg-red-500 h-1 rounded-full" style={{ width: '30%' }}></div>
-          </div>
-        </div>
       </div>
     </div>
   )
