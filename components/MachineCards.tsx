@@ -8,6 +8,7 @@ import { useMachineStopCounts } from '@/hooks/useMachineStopCounts'
 import { useMachineStopTimes } from '@/hooks/useMachineStopTimes'
 import { machineService, default as apiClient } from '@/services/api'
 import { formatDistanceToNow } from 'date-fns'
+import { calculateEfficiency } from '@/lib/utils'
 import type { MachineLiveData, MonitorLog } from '@/types/machineMonitor'
 import type { Machine } from '@/types'
 import MachineDetailModal from './MachineDetailModal'
@@ -26,14 +27,6 @@ function formatDuration(seconds: number): string {
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
 }
 
-/**
- * Calculate percentage based on stitches (assuming a target, or use a simple calculation)
- */
-function calculatePercentage(stitches: number): number {
-  // Simple calculation: assume target is around 350000, or use a dynamic calculation
-  const target = 350000
-  return Math.min(100, Math.round((stitches / target) * 100))
-}
 
 /**
  * Machine Card Component - Simplified to show only essential info
@@ -51,7 +44,10 @@ function MachineCard({
 }) {
   const [currentTime, setCurrentTime] = useState(new Date())
   const isRunning = machine.machineStatus === 1
-  const percentage = calculatePercentage(machine.pikCounter)
+
+  // Calculate efficiency based on runtime and stop time
+  const totalStopTime = stopTimes?.total || 0
+  const efficiency = calculateEfficiency(totalStopTime)
 
   // Update current time every second for live timer
   useEffect(() => {
@@ -66,7 +62,6 @@ function MachineCard({
   const elapsedTime = formatDuration(elapsedSeconds)
 
   const totalStops = stopCounts?.total || 0
-  const totalStopTime = stopTimes?.total || 0
 
   return (
     <div
@@ -118,16 +113,16 @@ function MachineCard({
           <span className="text-sm font-semibold text-gray-900">{machine.pikCounter.toLocaleString()}</span>
         </div>
 
-        {/* Percentage */}
+        {/* Efficiency */}
         <div className="space-y-1">
           <div className="flex items-center justify-between">
             <span className="text-sm text-gray-600">Efficiency</span>
-            <span className="text-sm font-semibold text-gray-900">{percentage}%</span>
+            <span className="text-sm font-semibold text-gray-900">{efficiency}%</span>
           </div>
           <div className="w-full bg-gray-200 rounded-full h-2">
             <div
-              className="bg-red-500 h-2 rounded-full transition-all duration-300"
-              style={{ width: `${percentage}%` }}
+              className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+              style={{ width: `${efficiency}%` }}
             />
           </div>
         </div>
@@ -186,7 +181,7 @@ function MachineCard({
             </svg>
             <span className="text-sm font-medium text-gray-700">Stop Time</span>
           </div>
-          <span className="text-sm font-bold text-gray-900">{formatDuration(totalStopTime)}</span>
+          <span className="text-sm font-bold text-gray-900">{formatDuration(stopTimes?.total || 0)}</span>
         </div>
       </div>
     </div>

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { calculateEfficiency } from '@/lib/utils'
 import type { MachineLiveData } from '@/types/machineMonitor'
 
 /**
@@ -17,13 +18,6 @@ function formatDuration(seconds: number): string {
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
 }
 
-/**
- * Calculate percentage based on stitches (assuming a target, or use a simple calculation)
- */
-function calculatePercentage(stitches: number): number {
-  const target = 350000
-  return Math.min(100, Math.round((stitches / target) * 100))
-}
 
 interface MachineDetailModalProps {
   machine: MachineLiveData
@@ -44,7 +38,6 @@ export default function MachineDetailModal({
 }: MachineDetailModalProps) {
   const [currentTime, setCurrentTime] = useState(new Date())
   const isRunning = machine.machineStatus === 1
-  const percentage = calculatePercentage(machine.pikCounter)
 
   // Update current time every second for live timer
   useEffect(() => {
@@ -77,7 +70,18 @@ export default function MachineDetailModal({
   const nightStopTime = stopTimes?.night || 0
   const totalStopTime = stopTimes?.total || 0
 
-  // Calculate run time (total time - stop time)
+  // Shift duration in seconds (12 hours = 43200 seconds)
+  const SHIFT_DURATION = 12 * 60 * 60 // 43200 seconds
+
+  // Calculate run time for each shift
+  const dayRunTime = Math.max(0, SHIFT_DURATION - dayStopTime)
+  const nightRunTime = Math.max(0, SHIFT_DURATION - nightStopTime)
+  const totalRunTime = dayRunTime + nightRunTime
+
+  // Calculate efficiency based on runtime and stop time
+  const efficiency = calculateEfficiency(totalStopTime)
+
+  // Calculate current run time (total time - stop time)
   const totalTime = elapsedSeconds + totalStopTime
   const runTime = Math.max(0, totalTime - totalStopTime)
 
@@ -276,12 +280,12 @@ export default function MachineDetailModal({
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium text-gray-700">Efficiency</span>
-                    <span className="text-sm font-bold text-gray-900">{percentage}%</span>
+                    <span className="text-sm font-bold text-gray-900">{efficiency}%</span>
                   </div>
                   <div className="w-full bg-gray-200 rounded-full h-3">
                     <div
-                      className="bg-red-500 h-3 rounded-full transition-all duration-300"
-                      style={{ width: `${percentage}%` }}
+                      className="bg-blue-500 h-3 rounded-full transition-all duration-300"
+                      style={{ width: `${efficiency}%` }}
                     />
                   </div>
                 </div>
@@ -395,6 +399,39 @@ export default function MachineDetailModal({
                       <span className="text-sm font-medium text-gray-700">Total Stop Time (Today)</span>
                     </div>
                     <span className="text-sm font-bold text-gray-900">{formatDuration(totalStopTime)}</span>
+                  </div>
+                </div>
+
+                {/* Run Time Breakdown */}
+                <div className="space-y-3 pt-4 border-t border-gray-200">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <svg className="w-5 h-5 text-yellow-500" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
+                      </svg>
+                      <span className="text-sm text-gray-600">Run Time (Day)</span>
+                    </div>
+                    <span className="text-sm font-semibold text-gray-900">{formatDuration(dayRunTime)}</span>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <svg className="w-5 h-5 text-indigo-500" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
+                      </svg>
+                      <span className="text-sm text-gray-600">Run Time (Night)</span>
+                    </div>
+                    <span className="text-sm font-semibold text-gray-900">{formatDuration(nightRunTime)}</span>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2 border-t border-gray-200">
+                    <div className="flex items-center gap-2">
+                      <svg className="w-5 h-5 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
+                      </svg>
+                      <span className="text-sm font-medium text-gray-700">Total Run Time (Today)</span>
+                    </div>
+                    <span className="text-sm font-bold text-gray-900">{formatDuration(totalRunTime)}</span>
                   </div>
                 </div>
               </div>
